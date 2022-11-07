@@ -87,22 +87,19 @@ defmodule PhoenixLiveSession do
   @default_lifetime 48 * 60 * 60_000
   @default_clean_interval 60_000
   @max_tries 100
-      require Logger
+
   #
   # Implementation of the Plug.Session.Store behaviour
   #
 
   # implementation of :ets.update_element/3
   defp update_element(table, sid, {pos, value}) do
-    Logger.warn("LOOKING FOR SID #{inspect(sid)}")
     case :dets.lookup(table, sid) |> List.first() do
       nil ->
         []
 
       item ->
-        Logger.warn("FOUND #{inspect(item)}")
-        Logger.warn("WANT TO REPLACE POSITION #{inspect(pos-1)} WITH #{inspect(value)}")
-        new_item = put_elem(item, pos-1, value)
+        new_item = put_elem(item, pos - 1, value)
         :dets.insert(table, new_item)
         [new_item]
     end
@@ -176,7 +173,6 @@ defmodule PhoenixLiveSession do
 
   defp put_in(sid, key, value, opts) do
     table = Keyword.fetch!(opts, :table)
-    Logger.warn("PUTTING SID #{inspect(sid)} WITH KEY #{inspect(key)}, value #{inspect value} and opts #{inspect(opts)}")
 
     case :dets.lookup(table, sid) do
       [{^sid, data, _expires_at}] ->
