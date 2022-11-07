@@ -1,6 +1,5 @@
 defmodule PhoenixLiveSession.Store do
   use GenServer
-  require Logger
 
   @default_table :phoenix_live_sessions
 
@@ -16,7 +15,6 @@ defmodule PhoenixLiveSession.Store do
 
   @impl true
   def init(table) do
-    Logger.warn(inspect(table))
     :dets.open_file(table, [type: :set])
     {:ok, table}
   end
