@@ -1,3 +1,4 @@
+# cspell: ignore dets
 # Copyright 2013 Plataformatec.
 # Copyright 2020 Pentacent.
 #
@@ -86,24 +87,42 @@ defmodule PhoenixLiveSession do
   @default_lifetime 48 * 60 * 60_000
   @default_clean_interval 60_000
   @max_tries 100
-
+      require Logger
   #
   # Implementation of the Plug.Session.Store behaviour
   #
+
+  # implementation of :ets.update_element/3
+  defp update_element(table, sid, {pos, value}) do
+    Logger.warn("LOOKING FOR SID #{inspect(sid)}")
+    case :dets.lookup(table, sid) |> List.first() do
+      nil ->
+        []
+
+      item ->
+        Logger.warn("FOUND #{inspect(item)}")
+        Logger.warn("WANT TO REPLACE POSITION #{inspect(pos-1)} WITH #{inspect(value)}")
+        new_item = put_elem(item, pos-1, value)
+        :dets.insert(table, new_item)
+        [new_item]
+    end
+  end
 
   def init(opts) do
     opts
     |> put_defaults()
   end
 
+  @spec get(any, any, keyword) ::
+          {any, %{optional(:__opts__) => [{any, any}], optional(any) => any}}
   def get(_conn, sid, opts) do
     table = Keyword.fetch!(opts, :table)
 
     maybe_clean(opts)
 
-    case :ets.lookup(table, sid) do
+    case :dets.lookup(table, sid) do
       [{^sid, data, _expires_at}] ->
-        :ets.update_element(table, sid, {3, expires_at(opts)})
+        update_element(table, sid, {3, expires_at(opts)})
         {sid, put_meta(data, sid, opts)}
 
       [] ->
@@ -120,8 +139,8 @@ defmodule PhoenixLiveSession do
       |> DateTime.add(-1 * lifetime, :millisecond)
       |> DateTime.to_unix()
 
-    :ets.select_delete(table, [{{:_, :_, :"$1"}, [{:<, :"$1", cutoff}], [true]}])
-    :ets.insert(table, {"last_clean", nil, DateTime.to_unix(now)})
+    :dets.select_delete(table, [{{:_, :_, :"$1"}, [{:<, :"$1", cutoff}], [true]}])
+    :dets.insert(table, {"last_clean", nil, DateTime.to_unix(now)})
   end
 
   def put(_conn, nil, data, opts) do
@@ -130,7 +149,7 @@ defmodule PhoenixLiveSession do
 
   def put(_conn, sid, data, opts) do
     table = Keyword.fetch!(opts, :table)
-    :ets.insert(table, {sid, data, expires_at(opts)})
+    :dets.insert(table, {sid, data, expires_at(opts)})
     broadcast_update(sid, data, opts)
     sid
   end
@@ -138,7 +157,7 @@ defmodule PhoenixLiveSession do
   def delete(_conn, sid, opts) do
     table = Keyword.fetch!(opts, :table)
     broadcast_update(sid, %{}, opts)
-    :ets.delete(table, sid)
+    :dets.delete(table, sid)
     :ok
   end
 
@@ -147,7 +166,7 @@ defmodule PhoenixLiveSession do
     table = Keyword.fetch!(opts, :table)
     sid = Base.encode64(:crypto.strong_rand_bytes(96))
 
-    if :ets.insert_new(table, {sid, data, expires_at(opts)}) do
+    if :dets.insert_new(table, {sid, data, expires_at(opts)}) do
       broadcast_update(sid, data, opts)
       sid
     else
@@ -157,12 +176,13 @@ defmodule PhoenixLiveSession do
 
   defp put_in(sid, key, value, opts) do
     table = Keyword.fetch!(opts, :table)
+    Logger.warn("PUTTING SID #{inspect(sid)} WITH KEY #{inspect(key)}, value #{inspect value} and opts #{inspect(opts)}")
 
-    case :ets.lookup(table, sid) do
+    case :dets.lookup(table, sid) do
       [{^sid, data, _expires_at}] ->
         updated_data = Map.put(data, key, value)
-        :ets.update_element(table, sid, {2, updated_data})
-        :ets.update_element(table, sid, {3, expires_at(opts)})
+        update_element(table, sid, {2, updated_data})
+        update_element(table, sid, {3, expires_at(opts)})
         broadcast_update(sid, updated_data, opts)
         sid
 
@@ -189,7 +209,7 @@ defmodule PhoenixLiveSession do
     clean_interval = Keyword.fetch!(opts, :clean_interval)
     latest_possible_clean = DateTime.utc_now() |> DateTime.add(-1 * clean_interval, :millisecond)
 
-    case :ets.lookup(table, "last_clean") do
+    case :dets.lookup(table, "last_clean") do
       [{"last_clean", _, last_clean}] ->
         if latest_possible_clean > last_clean do
           clean(table, opts)
